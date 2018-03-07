@@ -34,7 +34,7 @@ export default class Transformer {
             case 'clashes':
                 return Transformer.transformQuality(feature, data, pdbId, entityId, length, bestChainId)
             case 'quality':
-            return Transformer.transformQualitySummary(feature, data, pdbId, entityId, length, bestChainId)
+                return Transformer.transformQualitySummary(feature, data, pdbId, entityId, length, bestChainId)
         }
     }
 
@@ -164,6 +164,7 @@ export default class Transformer {
 
         });
         //console.log('finalResult->', finalResult)
+        
         return finalResult;
 
     }
@@ -328,7 +329,6 @@ export default class Transformer {
     static transformQualitySummary(feature, data, pdbId, entityId, length, bestChainId) {
 
 
-        console.log('quality summary->', feature)
         let qualityTracks = [];
         //console.log('quality chain->', bestChainId)
 
@@ -337,8 +337,6 @@ export default class Transformer {
         }
 
         let result = data["molecules"];
-
-        console.log('result->', result)
 
         let outlierDataHash = {};
 

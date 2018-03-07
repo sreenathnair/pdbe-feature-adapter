@@ -1,6 +1,7 @@
 
 import Transformer from './Transformer'
 
+
 const loadComponent = function () {
 
     class PDBeFeatureAdapter extends HTMLElement {
@@ -17,9 +18,103 @@ const loadComponent = function () {
             this._entityId = this.getAttribute('entityid')
             this._length = this.getAttribute('length')
             this._bestChainId = this.getAttribute('chainid')
-            this._initLoaders();
-            this._addLoaderListeners();
-            //console.log('Inside adapter', this._feature, this._pdbId, this._entityId, this._length)
+
+            // listen to children only not in case of variation, for variation we make UniProt calls from here
+            if(this._feature != 'variation') {
+                
+                this._initLoaders();
+                this._addLoaderListeners();
+
+            } else {
+                
+                var accessionCount = 0
+                var requestProcessed = 0
+                var accessionStartEndMap = {}
+                let resultFeatures = []
+
+                this.loadUniProtAccessions(this._pdbId).then(result => {
+
+                    result = result[this._pdbId]["UniProt"]
+                    console.log('Result->', result)
+                    accessionCount = Object.keys(result).length
+                    console.log('accessionCount', accessionCount)
+
+
+                    Object.keys(result).forEach(accession => {
+
+                        result[accession].mappings.filter(x => x.chain_id == this._bestChainId).map(x => {
+                            
+                            // when there are segments of UniProt accessions across PDB sequence
+                            if(accessionStartEndMap[accession] == undefined) {
+                                accessionStartEndMap[accession] = []
+                            }
+                            accessionStartEndMap[accession].push({
+                                unp_start: x.unp_start,
+                                unp_end: x.unp_end,
+                                pdb_start: x.start.residue_number,
+                                pdb_end: x.end.residue_number
+                            })
+                        })
+                        console.log('map->', accessionStartEndMap)
+                        this.loadUniProtVariationData(accession).then(variationData => {
+                            
+                            requestProcessed++
+
+                            // process successful responses
+                            if(variationData['errorMessage'] == undefined) {
+                                
+                                console.log(accession, ' before variation->',variationData)
+                                console.log('requestProcessed', requestProcessed)
+                                
+                                console.log('len->', this._length, variationData.sequence.length)
+
+                                // keep the longest sequence (PDB or UNP) in variation result
+                                //if(this._length > variationData.sequence.length) {
+                                // as of now make sequence as PDB sequence
+                                variationData.sequence = document.querySelector('protvista-sequence').data
+                                //}
+                                
+
+                                // transform variation to scope of PDB
+                                // 1. Strip the data to unp range and shift them to pdb range
+                                // 2. Shift the sequence to PDB scope
+                                
+                                variationData.features
+                                    .forEach(x => {
+                                        accessionStartEndMap[accession].forEach(y => {
+                                            if(x.begin >= y.unp_start && x.begin <= y.unp_end) {
+                                                x.begin = parseInt(x.begin) + (y.pdb_start - y.unp_start)
+                                                resultFeatures.push(x)
+                                            }
+                                        })
+                                    })
+                                    console.log('resultfeatures->', resultFeatures)
+                                                        
+                                variationData.features = resultFeatures
+                                
+                                // return data to parent when response from all reaches
+                                if(requestProcessed == accessionCount) {
+                                    this.dispatchEvent(new CustomEvent(
+                                        'load', {
+                                            detail: {
+                                                payload: variationData
+                                            },
+                                            bubbles: true,
+                                            cancelable: true
+                                        }
+                                    ));
+                                }
+                                
+                            }
+
+                        })
+
+                    })
+
+                })
+
+            }
+            
         
         }
 
@@ -27,12 +122,8 @@ const loadComponent = function () {
 
             data = data[this._pdbId]
             data = Transformer.transform(data, this._feature, this._pdbId, this._entityId, parseInt(this._length), this._bestChainId)
-           
-            //console.log('inside')
-            
-            
             this._adaptedData = data
-            //console.log('Inside parseEntry')
+            
         }
 
         get adaptedData() {
@@ -89,6 +180,28 @@ const loadComponent = function () {
                     }
                 }
             });
+        }
+
+        async loadUniProtAccessions(pdbId) {
+
+            // get all UniProt accessions for entry
+            try {
+                return await (await fetch(`https://www.ebi.ac.uk/pdbe/api/mappings/uniprot/${pdbId}`)).json()
+            } catch (e) {
+                console.log('Error loading UniProt accessions', e)
+            }
+
+        }
+
+        async loadUniProtVariationData(accession) {
+
+            // get variation data for a UniProt entry
+            try {
+                return await (await fetch(`https://www.ebi.ac.uk/proteins/api/variation/${accession}`)).json()
+            } catch (e) {
+                console.log('Error loading UniProt variations', e)
+            }
+
         }
 
     }
